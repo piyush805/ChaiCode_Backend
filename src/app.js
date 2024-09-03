@@ -18,7 +18,7 @@ app.use(
 app.use(express.urlencoded({ extended: true, limit: "16kb" })); // extended for nested objects
 app.use(express.static("public")); //some assets to be publicly accessible eg favicon, images
 app.use(cookieParser()); // CRUD operation for cookies to be performed securly by server only - on the client browser
-
+app.use(errorHandler); // error handler middleware
 /**  middle ware for checking things before handling requests
   eg: check for logged in, check for admin
   There is a certaoin sequence to writing theese
@@ -31,6 +31,7 @@ app.use(cookieParser()); // CRUD operation for cookies to be performed securly b
 
 //routes import
 import userRouter from "./routes/user.routes.js";
+import { errorHandler } from "./middlewares/error.middleware.js";
 
 // routes declaration
 app.use("/api/v1/users", userRouter);

@@ -1,10 +1,14 @@
+import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
+
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { User } from "../models/user.model.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
-import jwt from "jsonwebtoken";
-import mongoose from "mongoose";
+import {
+  deleteFromCloudinary,
+  uploadOnCloudinary,
+} from "../utils/cloudinary.js";
 
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
@@ -88,7 +92,14 @@ export const registerUser = asyncHandler(async (req, res) => {
     "-password -refreshToken"
   );
   if (!createdUser) {
-    throw new ApiError(500, "Something went wrong while registering user");
+    if (avatar) await deleteFromCloudinary(avatar.public_id);
+
+    if (coverImage) await deleteFromCloudinary(coverImage.public_id);
+
+    throw new ApiError(
+      500,
+      "Something went wrong while registering user and images were deleted"
+    );
   }
 
   return res
@@ -152,9 +163,9 @@ export const logoutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(
     req.user._id,
     {
+      // $set : {refreshToken: undefined} works
+      // $set : {refreshToken: null} doesn't works
       $unset: {
-        // $set : {refreshToken: undefined} doesnt work
-        // $set : {refreshToken: null} works
         refreshToken: 1, // this removes the field from the document
       },
     },
@@ -165,7 +176,7 @@ export const logoutUser = asyncHandler(async (req, res) => {
   // make cookies server-modifiable
   const options = {
     httpOnly: true,
-    secure: true,
+    secure: process.env.NODE_ENV === "production",
   };
 
   return res
@@ -187,34 +198,35 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     );
 
     const user = await User.findById(decodedTokenInfo?._id);
+
     if (!user) {
       throw new ApiError(401, "Invalid refresh token");
     }
     // since refresh token was saved in user as well while registering
     // so it has to be matched and validated
     if (incomingToken !== user?.refreshToken) {
-      throw new ApiError(401, "Refresh token us expired or used");
+      throw new ApiError(401, "Refresh token expired or used");
     }
 
+    // Generate new access and refresh token and send to user
     const options = {
       httpOnly: true,
       secure: true,
     };
-    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
-      user?._id
-    );
+    const { accessToken, refreshToken: newRefreshToken } =
+      await generateAccessAndRefreshTokens(user?._id);
     return res
       .status(200)
       .cookie("accessToken", accessToken, options)
-      .cookie("refreshToken", refreshToken, options)
+      .cookie("refreshToken", newRefreshToken, options)
       .json(
         new ApiResponse(
           200,
           {
             accessToken,
-            refreshToken,
+            newRefreshToken,
           },
-          "Access token refreshed"
+          "Access token refreshed successfully"
         )
       );
   } catch (err) {
@@ -259,7 +271,7 @@ export const updateAccountDetails = asyncHandler(async (req, res) => {
     {
       new: true,
     }
-  ).select("-password");
+  ).select("-password -refreshToken");
   return res
     .status(200)
     .json(new ApiResponse(200, user, "Account details updated successfully"));
@@ -282,7 +294,7 @@ export const updateUserAvatar = asyncHandler(async (req, res) => {
       },
     },
     { new: true }
-  ).select("-password");
+  ).select("-password -refreshToken");
   return res
     .status(200)
     .json(new ApiResponse(200, user, "Avatar image updated successfully"));
@@ -305,7 +317,7 @@ export const updateUserCoverImage = asyncHandler(async (req, res) => {
       },
     },
     { new: true }
-  ).select("-password");
+  ).select("-password -refreshToken");
 
   return res
     .status(200)
@@ -396,7 +408,7 @@ export const getWatchHistory = asyncHandler(async (req, res) => {
     {
       $match: {
         // normal in mongoose, _id is converted to ObjectId
-        // But in aggregation pipeline it is all passed as it is so it has to be converted mannually
+        // But in aggregation pipeline it is all passed as it is so it has to be converted manually
         _id: new mongoose.Types.ObjectId(req.user._id),
       },
     },

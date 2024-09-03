@@ -30,8 +30,10 @@ router.route("/register").post(
   registerUser
 );
 router.route("/login").post(loginUser);
+router.route("/refresh-token").post(refreshAccessToken); // controller itself has verifyJWT so don't need middleware here
+
+// Secured routes
 router.route("/logout").post(verifyJWT, logoutUser);
-router.route("/refresh-token").post(refreshAccessToken); // controller has verifyJWT so dont need middleware here
 router.route("/change-password").post(verifyJWT, changeCurrentPassword); // secure - only logged in users should do it
 router.route("/current-user").get(verifyJWT, getCurrentUser);
 router.route("/update-account").patch(verifyJWT, updateAccountDetails);
@@ -41,7 +43,6 @@ router
 router
   .route("/cover-image")
   .patch(verifyJWT, upload.single("coverImage"), updateUserCoverImage);
-
 router.route("/channel/:username").get(verifyJWT, getUserChannelProfile);
 router.route("/history").get(verifyJWT, getWatchHistory);
 export default router;
